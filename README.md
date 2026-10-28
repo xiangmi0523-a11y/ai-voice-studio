@@ -111,7 +111,7 @@ npm run dev          # http://localhost:3000，同一局域网手机可访问 ht
 
 ```bash
 npm run check    # 语法检查、文件引用、import 路径、路由完整性、前端密钥扫描、.env.example 校验
-npm test         # 79 项自动化测试（接口格式、输入校验、脱敏、DEMO 隔离、前端逻辑、本地服务器）
+npm test         # 自动化测试（接口格式、输入校验、脱敏、DEMO 隔离与保护、前端逻辑、本地服务器）
 npm run verify   # 以上两项
 ```
 

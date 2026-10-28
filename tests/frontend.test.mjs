@@ -7,7 +7,7 @@ import { countChars, formatDateTime, formatDuration, formatSettingValue, truncat
 import { createLocalStore } from '../public/js/core/local-store.js';
 import { createStore } from '../public/js/core/state.js';
 import { createApiClient } from '../public/js/services/api-client.js';
-import { createDemoHistory, DEMO_VOICES } from '../public/js/services/demo-data.js';
+import { createDemoHistory, DEMO_VOICES, isDemoVoiceId } from '../public/js/services/demo-data.js';
 import { createFavoritesStore, createLocalFavoritesAdapter } from '../public/js/services/favorites-store.js';
 import { buildGeneratePayload, createIdempotencyKeeper } from '../public/js/services/generation.js';
 import { createDemoHistoryStore, fetchRemoteHistory, getHistoryStatusDisplay } from '../public/js/services/history-store.js';
@@ -170,7 +170,8 @@ describe('音色筛选', () => {
 });
 
 describe('生成请求', () => {
-  const base = { text: ' 你好 ', voiceId: DEMO_VOICES[0].id, modelId: 'eleven_multilingual_v2', settings: defaultSettings() };
+  // 用真实格式的音色 ID；DEMO 音色会被拦截，不能作为“合法请求”
+  const base = { text: ' 你好 ', voiceId: 'realVoice12345', modelId: 'eleven_multilingual_v2', settings: defaultSettings() };
 
   it('前端组装的请求能通过服务端校验', () => {
     const built = buildGeneratePayload(base);
@@ -294,5 +295,51 @@ describe('历史状态展示', () => {
     assert.deepEqual(getHistoryStatusDisplay({ isDemo: false, status: 'succeeded' }), { label: '已完成', tone: 'success' });
     assert.deepEqual(getHistoryStatusDisplay({ isDemo: false, status: 'failed' }), { label: '失败', tone: 'danger' });
     assert.equal(getHistoryStatusDisplay({ isDemo: false, status: 'processing' }).label, '处理中');
+  });
+});
+
+describe('DEMO 音色保护', () => {
+  const base = { text: '你好', modelId: 'eleven_multilingual_v2', settings: defaultSettings() };
+
+  it('选中 DEMO 音色时不会组装生成请求', () => {
+    for (const voice of DEMO_VOICES) {
+      const built = buildGeneratePayload({ ...base, voiceId: voice.id, voice });
+      assert.equal(built.ok, false, `${voice.name} 不应能生成`);
+      assert.deepEqual(built.errors.map((e) => e.field), ['voiceId']);
+      assert.match(built.errors[0].reason, /DEMO/);
+    }
+  });
+
+  it('来自接口的真实音色（isDemo: false）不受影响', () => {
+    const voice = { id: 'realVoice12345', name: 'X', isDemo: false };
+    assert.equal(buildGeneratePayload({ ...base, voiceId: voice.id, voice }).ok, true);
+  });
+
+  it('只传 DEMO voiceId、不传 voice 对象时同样被拦截', () => {
+    for (const voice of DEMO_VOICES) {
+      const built = buildGeneratePayload({ ...base, voiceId: voice.id });
+      assert.equal(built.ok, false, `${voice.id} 不应绕过拦截`);
+      assert.deepEqual(built.errors.map((e) => e.field), ['voiceId']);
+      assert.match(built.errors[0].reason, /DEMO/);
+    }
+  });
+
+  it('isDemoVoiceId 以 DEMO 数据定义为准：覆盖全部 DEMO 音色，不误伤真实音色', () => {
+    assert.ok(DEMO_VOICES.every((v) => isDemoVoiceId(v.id)));
+    assert.equal(isDemoVoiceId('21m00Tcm4TlvDq8ikWAM'), false);
+    assert.equal(isDemoVoiceId('realVoice12345'), false);
+    assert.equal(isDemoVoiceId(undefined), false);
+    assert.equal(isDemoVoiceId(null), false);
+  });
+
+  it('只有 DEMO 音色会被拦截：缺少 voice 对象时真实音色行为与之前一致', () => {
+    assert.equal(buildGeneratePayload({ ...base, voiceId: 'realVoice12345' }).ok, true);
+  });
+
+  it('接口不可用时回退的音色全部带 isDemo，不会被当成真实音色', async () => {
+    const api = { getVoices: async () => ({ ok: false, error: { code: 'NOT_IMPLEMENTED' } }) };
+    const { source, voices } = await loadVoices(api);
+    assert.equal(source, 'demo');
+    assert.ok(voices.length > 0 && voices.every((v) => v.isDemo === true));
   });
 });

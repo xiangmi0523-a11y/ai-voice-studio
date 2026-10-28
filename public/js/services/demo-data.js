@@ -15,6 +15,14 @@ export const DEMO_VOICES = Object.freeze([
   { id: 'demoVoice0006', name: 'Leo', description: 'Calm and confident English male voice', gender: 'male', language: 'English', tags: ['Calm', 'Podcast'] },
 ].map((v) => Object.freeze({ ...v, previewUrl: null, isDemo: true })));
 
+const DEMO_VOICE_IDS = new Set(DEMO_VOICES.map((v) => v.id));
+
+// 以数据定义为准判断某个音色 ID 是否为 DEMO 音色，不依赖 ID 命名前缀。
+// 只传 voiceId、没有音色对象时也能识别。
+export function isDemoVoiceId(voiceId) {
+  return DEMO_VOICE_IDS.has(voiceId);
+}
+
 // 以“当前时间”为基准生成，保证演示时显示为最近的记录
 export function createDemoHistory(now = Date.now()) {
   const minutes = (n) => new Date(now - n * 60000).toISOString();

@@ -93,6 +93,7 @@ export function initCreateView({ store, api, localStore, voicePicker }) {
     const built = buildGeneratePayload({
       text: state.text,
       voiceId: state.selectedVoiceId,
+      voice: state.voices.find((v) => v.id === state.selectedVoiceId),
       modelId: state.modelId,
       settings: state.settings,
     });
