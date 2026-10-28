@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { readBearerToken } from '../lib/auth.js';
 import { redact } from '../lib/logger.js';
-import { checkRateLimit } from '../lib/rate-limit.js';
+import { createInProcessLimiter } from '../lib/rate-limit.js';
 import { buildAudioPath } from '../lib/storage.js';
 import { isUuid, isVoiceId, validateText, validateVoiceSettings } from '../lib/validation.js';
 import { VALID_UUID } from './helpers.mjs';
@@ -75,8 +75,8 @@ describe('auth.readBearerToken', () => {
   });
 });
 
-describe('rate-limit 占位', () => {
-  it('第一阶段明确标记为未生效', async () => {
-    assert.deepEqual(await checkRateLimit('generate', 'u'), { enforced: false, allowed: true });
+describe('rate-limit 进程内限流', () => {
+  it('明确标记为不可靠（非跨实例）', () => {
+    assert.equal(createInProcessLimiter().reliable, false);
   });
 });

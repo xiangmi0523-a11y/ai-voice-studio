@@ -27,3 +27,10 @@ it('参数范围一致，且默认值在范围内', () => {
 it('版本号一致', () => {
   assert.equal(client.APP_VERSION, server.APP_VERSION);
 });
+
+it('按语速限制字数的规则一致', () => {
+  assert.equal(client.MAX_SPEED_ADJUSTED_CHARS, server.MAX_SPEED_ADJUSTED_CHARS);
+  for (const speed of [undefined, 0, 0.7, 0.85, 1, 1.2]) {
+    assert.equal(client.maxCharsForSpeed(speed), server.maxCharsForSpeed(speed), `speed=${speed}`);
+  }
+});

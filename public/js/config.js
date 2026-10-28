@@ -3,6 +3,13 @@
 export const APP_VERSION = '0.1.0';
 export const MAX_TEXT_LENGTH = 1000;
 
+// 语速越慢音频越长：按“字数 ÷ 语速”限制，与服务端 lib/config.js 一致（由测试保证）
+export const MAX_SPEED_ADJUSTED_CHARS = 1000;
+export function maxCharsForSpeed(speed = 1) {
+  const s = typeof speed === 'number' && Number.isFinite(speed) && speed > 0 ? speed : 1;
+  return Math.min(MAX_TEXT_LENGTH, Math.floor(MAX_SPEED_ADJUSTED_CHARS * s));
+}
+
 export const MODELS = Object.freeze([
   {
     id: 'eleven_multilingual_v2',

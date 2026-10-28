@@ -3,7 +3,7 @@
 import { defaultSettings, MAX_TEXT_LENGTH, MODELS, STORAGE_KEYS, VOICE_SETTINGS } from '../config.js';
 import { clear, h, icon, ICONS, qs } from '../core/dom.js';
 import { countChars, formatSettingValue } from '../core/format.js';
-import { buildGeneratePayload, createIdempotencyKeeper } from '../services/generation.js';
+import { buildGeneratePayload, createIdempotencyKeeper, runGeneration } from '../services/generation.js';
 import { getPlayer } from './player.js';
 
 const STATUS_TITLES = {
@@ -14,6 +14,11 @@ const STATUS_TITLES = {
   BACKEND_UNAVAILABLE: '后端接口不可用',
   RATE_LIMITED: '操作太频繁',
   UNAUTHORIZED: '需要登录',
+  SERVICE_UNAVAILABLE: '语音服务暂不可用',
+  UPSTREAM_ERROR: '语音服务出错',
+  UPSTREAM_TIMEOUT: '语音生成超时',
+  PAYLOAD_TOO_LARGE: '请求内容过大',
+  IDEMPOTENCY_CONFLICT: '这个请求已经提交过',
 };
 
 export function initCreateView({ store, api, localStore, voicePicker }) {
@@ -86,7 +91,9 @@ export function initCreateView({ store, api, localStore, voicePicker }) {
   resetBtn.addEventListener('click', () => store.set({ settings: defaultSettings() }));
 
   // ---- 生成 ----
-  async function generate() {
+  let currentAudioUrl = null;
+  // forceNewKey：用户明确确认“重新生成”时使用新的幂等键（可能再次产生费用）
+  async function generate({ forceNewKey = false } = {}) {
     const state = store.get();
     if (state.generation.status === 'loading') return; // 防止重复提交
 
@@ -108,26 +115,24 @@ export function initCreateView({ store, api, localStore, voicePicker }) {
       return;
     }
 
+    if (forceNewKey) keeper.reset();
     store.set({ generation: { status: 'loading' } });
-    const result = await api.generate(built.payload, keeper.keyFor(built.payload));
+    // 只请求一次，没有自动重试；失败后是否再试由用户决定
+    const outcome = await runGeneration({ api, keeper, payload: built.payload, previousUrl: currentAudioUrl });
 
-    if (!result.ok) {
-      store.set({ generation: { status: 'error', error: result.error, requestId: result.requestId } });
+    if (!outcome.ok) {
+      store.set({ generation: { status: 'error', error: outcome.error, requestId: outcome.requestId, outcomeUnknown: outcome.outcomeUnknown } });
       return;
     }
 
-    // 第二阶段：生成成功后通过 /api/audio/:id 拿签名链接再播放
-    keeper.reset();
-    const audio = await api.getAudio(result.data.id);
-    if (!audio.ok || !audio.data?.url) {
-      store.set({ generation: { status: 'error', error: audio.error || { code: 'STORAGE_ERROR', message: '音频获取失败，请稍后重试。' } } });
-      return;
-    }
-    getPlayer()?.load({ src: audio.data.url, title: state.voices.find((v) => v.id === state.selectedVoiceId)?.name || '', downloadName: `voice-${result.data.id}.mp3` });
+    // 服务端直接返回音频字节：用本地对象 URL 播放（CSP 已允许 blob:），不上传、不保存到云端。
+    // 对象 URL 只存在于当前页面，刷新后消失；runGeneration 已释放上一个对象 URL。
+    currentAudioUrl = outcome.url;
+    getPlayer()?.load({ src: currentAudioUrl, title: state.voices.find((v) => v.id === state.selectedVoiceId)?.name || '', downloadName: `voice-${Date.now()}.mp3` });
     store.set({ generation: { status: 'success' } });
   }
 
-  generateBtn.addEventListener('click', generate);
+  generateBtn.addEventListener('click', () => generate());
 
   function renderStatus(generation) {
     clear(statusEl);
@@ -145,18 +150,23 @@ export function initCreateView({ store, api, localStore, voicePicker }) {
       const { error } = generation;
       statusEl.classList.add('status--error');
       const desc = [error.message];
+      if (generation.outcomeUnknown) desc.push('请求已发出，但没有拿到结果，可能已经产生费用。系统不会自动重试；如需重新生成，请手动确认。');
       if (error.code === 'NOT_IMPLEMENTED') desc.push('当前为第一阶段框架，不会生成或伪造音频。');
       statusEl.append(
         icon(ICONS.alert, 'icon status__icon'),
         h('div', { class: 'status__body' },
-          h('p', { class: 'status__title' }, STATUS_TITLES[error.code] || '生成失败'),
+          h('p', { class: 'status__title' }, generation.outcomeUnknown ? '生成结果未知' : (STATUS_TITLES[error.code] || '生成失败')),
           h('p', { class: 'status__desc' }, desc.join(' ')),
           error.local ? null : h('p', { class: 'status__code' }, `错误代码：${error.code}`),
           error.local
             ? null
-            : h('div', { class: 'status__actions' },
-                h('button', { type: 'button', class: 'btn btn--secondary btn--small', 'data-retry': true, onclick: generate }, '重试'),
-              ),
+            : generation.outcomeUnknown
+              ? h('div', { class: 'status__actions' },
+                  h('button', { type: 'button', class: 'btn btn--secondary btn--small', 'data-confirm-regenerate': true, onclick: () => generate({ forceNewKey: true }) }, '确认重新生成（可能再次收费）'),
+                )
+              : h('div', { class: 'status__actions' },
+                  h('button', { type: 'button', class: 'btn btn--secondary btn--small', 'data-retry': true, onclick: () => generate() }, '重试'),
+                ),
         ),
       );
       statusEl.hidden = false;

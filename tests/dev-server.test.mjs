@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import { createDevServer, resolveApiRoute } from '../scripts/dev-server.mjs';
-import { VALID_UUID } from './helpers.mjs';
+import { FAKE_AUDIO, installMockCatalog, installMockTts, VALID_UUID, VALID_VOICE_ID } from './helpers.mjs';
 
 describe('resolveApiRoute', () => {
   it('按 Vercel 规则解析', async () => {
@@ -22,6 +22,8 @@ describe('dev server', () => {
   let server;
   let base;
   before(async () => {
+    await installMockCatalog();
+    await installMockTts();
     server = createDevServer();
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     base = `http://127.0.0.1:${server.address().port}`;
@@ -41,16 +43,15 @@ describe('dev server', () => {
     assert.notEqual(res.status, 200);
   });
 
-  it('POST /api/generate 端到端返回 NOT_IMPLEMENTED', async () => {
+  it('POST /api/generate 端到端返回音频二进制（模拟 TTS）', async () => {
     const res = await fetch(`${base}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': VALID_UUID },
-      body: JSON.stringify({ text: '你好', voiceId: 'demoVoice0001', modelId: 'eleven_flash_v2_5' }),
+      body: JSON.stringify({ text: '你好', voiceId: VALID_VOICE_ID, modelId: 'eleven_flash_v2_5' }),
     });
-    assert.equal(res.status, 501);
-    const body = await res.json();
-    assert.equal(body.ok, false);
-    assert.equal(body.error.code, 'NOT_IMPLEMENTED');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), FAKE_AUDIO);
   });
 
   it('DELETE /api/history/:id 动态路由', async () => {

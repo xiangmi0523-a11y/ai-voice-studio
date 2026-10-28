@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { before, describe, it } from 'node:test';
 
 import audio from '../api/audio/[id].js';
 import favoriteDelete from '../api/favorites/[voiceId].js';
@@ -9,7 +9,13 @@ import health from '../api/health.js';
 import historyDelete from '../api/history/[id].js';
 import history from '../api/history/index.js';
 import voices from '../api/voices.js';
-import { call, VALID_UUID, VALID_VOICE_ID } from './helpers.mjs';
+import { FAKE_AUDIO, VALID_UUID, VALID_VOICE_ID, call, freshKey, installMockCatalog, installMockTts } from './helpers.mjs';
+
+// 所有需要音色白名单的用例都使用模拟目录，不会请求真实 ElevenLabs
+before(async () => {
+  await installMockCatalog();
+  await installMockTts();
+});
 
 function assertErrorShape(res, status, code) {
   assert.equal(res.statusCode, status);
@@ -24,14 +30,12 @@ function assertErrorShape(res, status, code) {
 
 const validGenerate = () => ({
   method: 'POST',
-  headers: { 'idempotency-key': VALID_UUID },
+  headers: { 'idempotency-key': freshKey() },
   body: { text: '你好，世界', voiceId: VALID_VOICE_ID, modelId: 'eleven_multilingual_v2', settings: { stability: 0.5, speed: 1, use_speaker_boost: true } },
 });
 
 describe('统一返回格式与 NOT_IMPLEMENTED', () => {
   const cases = [
-    ['GET /api/voices', voices, { method: 'GET' }],
-    ['POST /api/generate', generate, validGenerate()],
     ['GET /api/history', history, { method: 'GET' }],
     ['DELETE /api/history/:id', historyDelete, { method: 'DELETE', query: { id: VALID_UUID } }],
     ['GET /api/favorites', favorites, { method: 'GET' }],
@@ -46,6 +50,17 @@ describe('统一返回格式与 NOT_IMPLEMENTED', () => {
       assert.equal(res.body.error.details.stage, 'framework');
     });
   }
+});
+
+describe('POST /api/generate 已接入真实生成（此处仅用模拟 TTS）', () => {
+  it('合法请求返回 200 音频二进制，而不是 501', async () => {
+    const res = await call(generate, validGenerate());
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['content-type'], 'audio/mpeg');
+    assert.equal(res.headers['cache-control'], 'private, no-store');
+    assert.equal(res.headers['x-content-type-options'], 'nosniff');
+    assert.deepEqual(res.rawBody, FAKE_AUDIO);
+  });
 });
 
 describe('请求方式校验', () => {
@@ -90,7 +105,7 @@ describe('POST /api/generate 输入校验', () => {
   }
 
   it('请求体不是对象 → 400', async () => {
-    const res = await call(generate, { method: 'POST', headers: { 'idempotency-key': VALID_UUID }, body: 'not json' });
+    const res = await call(generate, { method: 'POST', headers: { 'idempotency-key': freshKey() }, body: 'not json' });
     assertErrorShape(res, 400, 'VALIDATION_ERROR');
   });
 
@@ -98,7 +113,8 @@ describe('POST /api/generate 输入校验', () => {
     const req = validGenerate();
     req.body.text = '字'.repeat(1000);
     const res = await call(generate, req);
-    assert.equal(res.body.error.code, 'NOT_IMPLEMENTED');
+    assert.equal(res.statusCode, 200);
+    assert.ok(res.rawBody);
   });
 });
 

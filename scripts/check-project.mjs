@@ -91,7 +91,7 @@ for (const [method, route, file] of REQUIRED_ROUTES) {
 for (const file of walk(join(ROOT, 'public'), ['.js', '.html', '.css'])) {
   const src = readFileSync(file, 'utf8');
   if (/api\.elevenlabs\.io|xi-api-key/i.test(src)) fail(`${rel(file)} 直接访问 ElevenLabs，必须经由服务端`);
-  if (/SERVICE_ROLE|ELEVENLABS_API_KEY|process\.env/.test(src)) fail(`${rel(file)} 引用了服务端环境变量`);
+  if (/SERVICE_ROLE|ELEVENLABS_API_KEY|PUBLIC_VOICE_IDS|process\.env/.test(src)) fail(`${rel(file)} 引用了服务端环境变量`);
 }
 
 // 6. .env.example

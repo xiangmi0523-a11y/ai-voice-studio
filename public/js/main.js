@@ -6,7 +6,7 @@ import { createStore } from './core/state.js';
 import { api } from './services/api-client.js';
 import { createFavoritesStore, createLocalFavoritesAdapter } from './services/favorites-store.js';
 import { createDemoHistoryStore } from './services/history-store.js';
-import { loadVoices } from './services/voices.js';
+import { loadVoices, voicesPatch } from './services/voices.js';
 import { DEMO_VOICES } from './services/demo-data.js';
 import { initCreateView } from './ui/create-view.js';
 import { initFavoritesView } from './ui/favorites-view.js';
@@ -65,9 +65,7 @@ router = initRouter({
   },
 });
 
-loadVoices(api).then(({ source, voices }) => {
-  if (source === 'remote' && voices.length) {
-    const keep = voices.some((v) => v.id === store.get().selectedVoiceId);
-    store.set({ voices, voicesSource: source, selectedVoiceId: keep ? store.get().selectedVoiceId : voices[0].id });
-  }
+loadVoices(api).then((loaded) => {
+  const patch = voicesPatch(loaded, store.get().selectedVoiceId);
+  if (patch) store.set(patch);
 });

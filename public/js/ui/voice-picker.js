@@ -34,6 +34,16 @@ export function initVoicePicker({ store, favorites }) {
 
     clear(list);
     const visible = filterVoices(voices, { query, filter });
+    if (!voices.length) {
+      // 服务端没有公开任何音色（未配置、配置无效或没有获准音色）：不是搜索无结果
+      list.append(
+        h('li', { class: 'empty empty--compact' },
+          h('p', { class: 'empty__title' }, '当前没有可用音色'),
+          h('p', { class: 'empty__desc' }, '请检查服务端的音色配置'),
+        ),
+      );
+      return;
+    }
     if (!visible.length) {
       list.append(
         h('li', { class: 'empty empty--compact' },

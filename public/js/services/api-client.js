@@ -3,6 +3,7 @@
 //
 // 所有方法都返回统一结构：
 //   { ok: true, data }  或  { ok: false, status, error: { code, message, details? } }
+// 生成语音成功时服务端直接返回音频二进制，此时 data 为 { blob, contentType }。
 
 export const ClientErrorCodes = Object.freeze({
   NETWORK_ERROR: 'NETWORK_ERROR',
@@ -11,6 +12,9 @@ export const ClientErrorCodes = Object.freeze({
 });
 
 const DEFAULT_TIMEOUT_MS = 30000;
+// 生成请求的超时必须比服务端函数的最长执行时间（30 秒）更长：
+// 否则客户端先放弃，而服务端仍在生成并计费，用户随后重试就会重复计费。
+export const GENERATE_TIMEOUT_MS = 35000;
 
 export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch, getAccessToken = () => null } = {}) {
   async function request(path, { method = 'GET', body, headers = {}, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -43,6 +47,22 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
       clearTimeout(timer);
     }
 
+    // 成功的音频响应（audio/*）：读成 Blob，由调用方用 URL.createObjectURL 播放
+    const contentType = (response.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (response.ok && contentType.startsWith('audio/')) {
+      try {
+        const blob = await response.blob();
+        if (blob.size > 0) return { ok: true, status: response.status, data: { blob, contentType } };
+      } catch {
+        // 读取失败按后端不可用处理
+      }
+      return {
+        ok: false,
+        status: response.status,
+        error: { code: ClientErrorCodes.BACKEND_UNAVAILABLE, message: '音频数据无效，请稍后重试。' },
+      };
+    }
+
     let payload = null;
     try {
       payload = await response.json();
@@ -73,7 +93,7 @@ export function createApiClient({ baseUrl = '/api', fetchImpl = globalThis.fetch
     getHealth: () => request('/health'),
     getVoices: () => request('/voices'),
     generate: (payload, idempotencyKey) =>
-      request('/generate', { method: 'POST', body: payload, headers: { 'Idempotency-Key': idempotencyKey } }),
+      request('/generate', { method: 'POST', body: payload, timeoutMs: GENERATE_TIMEOUT_MS, headers: { 'Idempotency-Key': idempotencyKey, Accept: 'audio/mpeg, application/json' } }),
     getHistory: ({ limit = 20 } = {}) => request(`/history?limit=${enc(limit)}`),
     deleteHistory: (id) => request(`/history/${enc(id)}`, { method: 'DELETE' }),
     getFavorites: () => request('/favorites'),
