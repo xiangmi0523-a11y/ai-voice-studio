@@ -10,7 +10,7 @@ import { createApiClient } from '../public/js/services/api-client.js';
 import { createDemoHistory, DEMO_VOICES } from '../public/js/services/demo-data.js';
 import { createFavoritesStore, createLocalFavoritesAdapter } from '../public/js/services/favorites-store.js';
 import { buildGeneratePayload, createIdempotencyKeeper } from '../public/js/services/generation.js';
-import { createDemoHistoryStore, fetchRemoteHistory } from '../public/js/services/history-store.js';
+import { createDemoHistoryStore, fetchRemoteHistory, getHistoryStatusDisplay } from '../public/js/services/history-store.js';
 import { filterVoices, loadVoices } from '../public/js/services/voices.js';
 import { isUuid, validateGenerateRequest } from '../lib/validation.js';
 
@@ -266,5 +266,33 @@ describe('数据源回退', () => {
     const res = await fetchRemoteHistory(api);
     assert.equal(res.state, 'not_implemented');
     assert.equal(res.items, undefined);
+  });
+});
+
+describe('历史状态展示', () => {
+  it('DEMO 的 succeeded 记录显示为“示例完成”，不使用成功样式', () => {
+    const demoSucceeded = createDemoHistory().find((i) => i.status === 'succeeded');
+    assert.ok(demoSucceeded, '示例数据中应保留一条 succeeded 记录');
+    assert.equal(demoSucceeded.isDemo, true);
+    assert.equal(demoSucceeded.audioUrl, null);
+    const display = getHistoryStatusDisplay(demoSucceeded);
+    assert.equal(display.label, '示例完成');
+    assert.notEqual(display.tone, 'success');
+  });
+
+  it('所有 DEMO 记录的状态都带“示例”前缀，且不会显示为“已完成”', () => {
+    for (const item of createDemoHistory()) {
+      const { label, tone } = getHistoryStatusDisplay(item);
+      assert.match(label, /^示例/);
+      assert.notEqual(label, '已完成');
+      assert.equal(tone, 'demo');
+    }
+    assert.equal(getHistoryStatusDisplay({ isDemo: true, status: 'weird' }).label, '示例记录');
+  });
+
+  it('真实记录的状态文案保持不变', () => {
+    assert.deepEqual(getHistoryStatusDisplay({ isDemo: false, status: 'succeeded' }), { label: '已完成', tone: 'success' });
+    assert.deepEqual(getHistoryStatusDisplay({ isDemo: false, status: 'failed' }), { label: '失败', tone: 'danger' });
+    assert.equal(getHistoryStatusDisplay({ isDemo: false, status: 'processing' }).label, '处理中');
   });
 });

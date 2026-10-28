@@ -40,6 +40,12 @@
   color: var(--color-danger);
 }
 
+.badge--demo {
+  background: var(--color-fill);
+  color: var(--color-text-2);
+  border: 1px dashed var(--color-separator-strong);
+}
+
 .badge--pending {
   background: var(--color-accent-soft);
   color: var(--color-accent);

@@ -3,20 +3,21 @@
 import { MODELS } from '../config.js';
 import { clear, h, icon, ICONS, qs } from '../core/dom.js';
 import { formatDateTime, truncate } from '../core/format.js';
-import { fetchRemoteHistory } from '../services/history-store.js';
+import { fetchRemoteHistory, getHistoryStatusDisplay } from '../services/history-store.js';
 import { initSheet } from './sheet.js';
 import { showToast } from './toast.js';
 
-const STATUS_LABELS = {
-  succeeded: { text: '已完成', cls: 'badge--success' },
-  failed: { text: '失败', cls: 'badge--danger' },
-  processing: { text: '处理中', cls: 'badge--pending' },
-  pending: { text: '排队中', cls: 'badge--pending' },
+const BADGE_CLASS = {
+  success: 'badge--success',
+  danger: 'badge--danger',
+  pending: 'badge--pending',
+  demo: 'badge--demo',
+  neutral: '',
 };
 
-function statusBadge(status) {
-  const s = STATUS_LABELS[status] || { text: status, cls: '' };
-  return h('span', { class: `badge ${s.cls}` }, s.text);
+function statusBadge(item) {
+  const { label, tone } = getHistoryStatusDisplay(item);
+  return h('span', { class: `badge ${BADGE_CLASS[tone] || ''}`, dataset: { statusTone: tone } }, label);
 }
 
 export function initHistoryView({ api, demoHistory, onRegenerate }) {
@@ -110,7 +111,7 @@ export function initHistoryView({ api, demoHistory, onRegenerate }) {
         h('dt', {}, '模型'), h('dd', {}, model?.name || item.modelId),
         h('dt', {}, '字数'), h('dd', {}, String(item.characterCount)),
         h('dt', {}, '时间'), h('dd', {}, formatDateTime(item.createdAt)),
-        h('dt', {}, '状态'), h('dd', {}, statusBadge(item.status)),
+        h('dt', {}, '状态'), h('dd', {}, statusBadge(item)),
         item.errorCode ? [h('dt', {}, '错误代码'), h('dd', {}, item.errorCode)] : null,
       ),
       h('div', { class: 'history-item__actions' },
@@ -130,7 +131,7 @@ export function initHistoryView({ api, demoHistory, onRegenerate }) {
         h('span', {}, item.voiceName || item.voiceId),
         h('span', { 'aria-hidden': 'true' }, '·'),
         h('span', {}, formatDateTime(item.createdAt)),
-        statusBadge(item.status),
+        statusBadge(item),
       ),
       h('div', { class: 'history-item__actions' },
         h('button', { type: 'button', class: 'btn btn--text btn--small', 'data-action': 'view', onclick: () => openDetail(item) }, '查看'),
