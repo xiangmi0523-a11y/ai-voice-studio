@@ -1,0 +1,90 @@
+name: Build iOS IPA (unsigned)
+
+# 构建未签名的 .ipa，之后用全能签等工具自己重新签名。
+#
+# 触发：
+# * 推送到 main：构建并发布到 GitHub Release（预发布）。
+# * 推送到 feat/framework 且改动了 ios/ 或本文件：只构建并上传为 Actions 构建产物（不发 Release）。
+# * 手动触发：Actions → Build iOS IPA (unsigned) → Run workflow。
+#   注意：GitHub 要求 workflow_dispatch 的工作流文件在默认分支（main）上才能看到“Run workflow”按钮，
+#   所以合并到 main 之前请用上面第二种方式（推送触发）。
+on:
+  push:
+    branches: [main, feat/framework]
+    paths:
+      - "ios/**"
+      - ".github/workflows/build-ipa.yml"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "构建完成后发布到 GitHub Release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # 发布 Release 需要
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned, device SDK)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project AIVoiceStudio.xcodeproj \
+            -scheme AIVoiceStudio \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 60
+
+      - name: Package .ipa
+        working-directory: ios
+        run: |
+          APP="build/Build/Products/Release-iphoneos/AIVoiceStudio.app"
+          test -d "$APP" || { echo "找不到 $APP"; find build/Build/Products -maxdepth 3; exit 1; }
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry AIVoiceStudio-unsigned.ipa Payload
+          ls -lh AIVoiceStudio-unsigned.ipa
+          # 确认是未签名的
+          ! test -d "$APP/_CodeSignature" && echo "unsigned: ok"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIVoiceStudio-unsigned-ipa
+          path: ios/AIVoiceStudio-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        # 仅在 main 推送，或手动触发且勾选了 release 时发布；feat/framework 推送不发 Release
+        if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-build-${{ github.run_number }}
+          name: iOS 未签名 IPA #${{ github.run_number }}
+          body: |
+            未签名的 iOS 安装包，需要用全能签等工具自行签名后安装。
+            提交：${{ github.sha }}
+          prerelease: true
+          files: ios/AIVoiceStudio-unsigned.ipa

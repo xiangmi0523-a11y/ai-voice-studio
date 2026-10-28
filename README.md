@@ -214,3 +214,16 @@ npm run verify   # 以上两项
 3. 用量与费用上限。
 4. 音频存储与历史记录：目前生成后只存在于当前页面。
 5. 对真实 ElevenLabs 做一次验收（测试全部使用模拟）。
+
+## iOS 外壳（未签名 IPA）
+
+`ios/` 是一个极简的 Swift + WKWebView 外壳，只加载线上站点（地址写在 `ios/Sources/AppConfig.swift`），不打包前端文件。前端用相对路径 `/api/*` 请求后端，因为页面本身来自线上域名，请求是同源的，不涉及跨域。工程由 XcodeGen（`ios/project.yml`）在 CI 里生成，仓库不提交 `.xcodeproj`。
+
+打包流程在 `.github/workflows/build-ipa.yml`：推送到 `main`（或手动触发并勾选发布）时构建未签名 `.ipa` 并发布到 GitHub Release；推送到 `feat/framework` 且改动了 `ios/` 时只上传为 Actions 构建产物。安装前需要用全能签等工具自行签名。
+
+已知限制：
+- 站点开着 Vercel Authentication 时，App 里会先出现 Vercel 登录页，需要用公开可访问的域名才能让没有 Vercel 账号的人使用。
+- 页面的“下载”按钮（blob 下载）在 WKWebView 里可能无效，这是前端行为，外壳没有处理。
+- 未配置图标，安装后是默认空白图标。
+- 构建流程只在 GitHub 的 macOS 机器上验证，没有在本地编译过。
+

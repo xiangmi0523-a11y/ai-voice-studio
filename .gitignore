@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# iOS 外壳：XcodeGen 生成的工程和构建产物
+ios/*.xcodeproj
+ios/build/
+ios/Payload/
+ios/*.ipa

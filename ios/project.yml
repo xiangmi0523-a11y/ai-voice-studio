@@ -1,0 +1,33 @@
+# XcodeGen 配置：CI 里用 `xcodegen generate` 生成 .xcodeproj，仓库里不提交 pbxproj。
+# 本地如有 Mac：brew install xcodegen && cd ios && xcodegen generate && open AIVoiceStudio.xcodeproj
+name: AIVoiceStudio
+options:
+  bundleIdPrefix: com.xiangmi
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  AIVoiceStudio:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xiangmi.aivoicestudio
+        PRODUCT_NAME: AIVoiceStudio
+        INFOPLIST_FILE: Sources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # 未签名构建：之后用全能签等工具重新签名
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
