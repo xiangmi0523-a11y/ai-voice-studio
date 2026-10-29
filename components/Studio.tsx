@@ -96,11 +96,16 @@ export default function Studio({ initialConfig }: { initialConfig: ConfigStatus 
         </button>
       </nav>
 
-      {tab === "voice" && <VoiceTab state={state} refresh={refresh} />}
-      {tab === "song" && (
+      {/* All tabs stay mounted so an upload in progress survives switching tabs. */}
+      <div hidden={tab !== "voice"}>
+        <VoiceTab state={state} refresh={refresh} />
+      </div>
+      <div hidden={tab !== "song"}>
         <SongTab state={state} refresh={refresh} onDone={() => setTab("works")} />
-      )}
-      {tab === "works" && <WorksTab covers={state.covers} refresh={refresh} />}
+      </div>
+      <div hidden={tab !== "works"}>
+        <WorksTab covers={state.covers} refresh={refresh} />
+      </div>
 
       <p className="foot">仅供本人声音使用 · 生成内容为 AI 合成</p>
     </main>
