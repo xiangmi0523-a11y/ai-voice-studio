@@ -21,11 +21,17 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function uploadFile(file: Blob, name: string, onProgress: (pct: number) => void) {
+  // Large files go up in parallel parts; a part that fails on a shaky mobile
+  // network is retried and its bytes recounted, so only ever show the highest value.
+  let shown = 0;
   return upload(`uploads/${name}`, file, {
     access: "public",
     handleUploadUrl: "/api/upload",
     multipart: file.size > 20 * 1024 * 1024,
-    onUploadProgress: (e) => onProgress(Math.round(e.percentage)),
+    onUploadProgress: (e) => {
+      shown = Math.max(shown, Math.round(e.percentage));
+      onProgress(shown);
+    },
   });
 }
 
