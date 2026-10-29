@@ -1,5 +1,6 @@
 // Runs in the browser: turns the user's dry-vocal files into the zip layout
-// replicate/train-rvc-model expects (dataset/<name>/split_<i>.wav).
+// replicate/train-rvc-model expects (dataset/<name>/<clip>.wav), falling back to
+// the original files when the browser can't decode them.
 
 import { zipSync } from "fflate";
 
@@ -11,42 +12,70 @@ export async function buildDataset(
   files: File[],
   onProgress?: (text: string) => void,
 ): Promise<{ zip: Blob; seconds: number; clips: number }> {
-  // decodeAudioData resamples to the context's rate, so no separate resampling step.
-  const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
   const entries: Record<string, Uint8Array> = {};
   let clips = 0;
   let seconds = 0;
-  try {
-    for (const [i, file] of files.entries()) {
-      onProgress?.(`正在处理第 ${i + 1}/${files.length} 个文件…`);
-      const audio = await ctx.decodeAudioData(await file.arrayBuffer());
-      const mono = toMono(audio);
-      const size = CLIP_SECONDS * SAMPLE_RATE;
-      for (let start = 0; start < mono.length; start += size) {
-        const clip = mono.subarray(start, Math.min(start + size, mono.length));
-        if (clip.length < 2 * SAMPLE_RATE || rms(clip) < SILENCE_RMS) continue;
-        entries[`dataset/myvoice/split_${clips}.wav`] = encodeWav(clip);
-        clips++;
-        seconds += clip.length / SAMPLE_RATE;
-      }
+  for (const [i, file] of files.entries()) {
+    onProgress?.(`正在处理第 ${i + 1}/${files.length} 个文件…`);
+    const mono = await decodeMono(file);
+    if (!mono) {
+      // The phone browser can't decode this format (common on iOS). The trainer
+      // decodes with ffmpeg, so pass the original file through untouched.
+      const ext = file.name.split(".").pop()?.toLowerCase() || "m4a";
+      entries[`dataset/myvoice/raw_${i}.${ext}`] = new Uint8Array(await file.arrayBuffer());
+      clips++;
+      seconds += await probeDuration(file);
+      continue;
     }
-  } finally {
-    ctx.close();
+    const size = CLIP_SECONDS * SAMPLE_RATE;
+    for (let start = 0; start < mono.length; start += size) {
+      const clip = mono.subarray(start, Math.min(start + size, mono.length));
+      if (clip.length < 2 * SAMPLE_RATE || rms(clip) < SILENCE_RMS) continue;
+      entries[`dataset/myvoice/split_${clips}.wav`] = encodeWav(clip);
+      clips++;
+      seconds += clip.length / SAMPLE_RATE;
+    }
   }
-  if (!clips) throw new Error("没有找到有效的声音，文件可能是静音或格式不支持");
+  if (!clips) throw new Error("没有找到有效的声音，文件可能是静音");
   onProgress?.("正在打包…");
   const zipped = zipSync(entries, { level: 0 });
   return { zip: new Blob([zipped as BlobPart], { type: "application/zip" }), seconds, clips };
 }
 
-function toMono(audio: AudioBuffer): Float32Array {
-  if (audio.numberOfChannels === 1) return audio.getChannelData(0);
-  const out = new Float32Array(audio.length);
-  for (let c = 0; c < audio.numberOfChannels; c++) {
-    const data = audio.getChannelData(c);
-    for (let i = 0; i < out.length; i++) out[i] += data[i] / audio.numberOfChannels;
+/** Decode at the device's native rate, then downmix and resample; null if the browser can't decode it. */
+async function decodeMono(file: File): Promise<Float32Array | null> {
+  let decoded: AudioBuffer;
+  const ctx = new AudioContext();
+  try {
+    decoded = await ctx.decodeAudioData(await file.arrayBuffer());
+  } catch {
+    return null;
+  } finally {
+    ctx.close();
   }
-  return out;
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * SAMPLE_RATE), SAMPLE_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  return (await offline.startRendering()).getChannelData(0);
+}
+
+/** Length of a file the Web Audio API couldn't decode; 0 if the media element can't tell either. */
+function probeDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audio = document.createElement("audio");
+    const done = (n: number) => {
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(n) ? n : 0);
+    };
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => done(audio.duration);
+    audio.onerror = () => done(0);
+    setTimeout(() => done(0), 8000);
+    audio.src = url;
+  });
 }
 
 function rms(data: Float32Array): number {

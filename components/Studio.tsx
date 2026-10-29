@@ -138,7 +138,7 @@ function VoiceTab({ state, refresh }: { state: State; refresh: () => Promise<voi
     setError("");
     try {
       const { zip, seconds, clips } = await buildDataset(files, setProgress);
-      if (seconds < 60) throw new Error(`有效声音只有 ${Math.round(seconds)} 秒，至少需要 1 分钟，建议 10 分钟以上`);
+      if (seconds > 0 && seconds < 60) throw new Error(`有效声音只有 ${Math.round(seconds)} 秒，至少需要 1 分钟，建议 10 分钟以上`);
       const blob = await uploadFile(zip, `dataset-${Date.now()}.zip`, (p) =>
         setProgress(`已切成 ${clips} 段（${fmtMinutes(seconds)}），上传中 ${p}%`),
       );
